@@ -1,5 +1,8 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
+from exceptions import NoteNotFoundError
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 import models, schemas
 from database import engine, SessionLocal, Base
@@ -50,8 +53,13 @@ def list_notes(db: Session = Depends(get_db)):
 def get_note(note_id: int, db: Session = Depends(get_db)):
     note = db.query(models.NoteModel).filter(models.NoteModel.id == note_id).first()
     if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
+        raise NoteNotFoundError(note_id)
     return note
+
+
+@app.get("/crash-test")
+def crash_test():
+    return 1/0
 
 
 @app.put("/notes/{note_id}", response_model=schemas.NoteResponse)
@@ -60,7 +68,7 @@ def update_note(
 ):
     note = db.query(models.NoteModel).filter(models.NoteModel.id == note_id).first()
     if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
+        raise NoteNotFoundError(note_id)
     note.title = updated.title
     note.content = updated.content
     db.commit()
@@ -72,6 +80,17 @@ def update_note(
 def delete_note(note_id: int, db: Session = Depends(get_db)):
     note = db.query(models.NoteModel).filter(models.NoteModel.id == note_id).first()
     if not note:
-        raise HTTPException(status_code=404, detail="Note not found")
+        raise NoteNotFoundError(note_id)
     db.delete(note)
     db.commit()
+
+
+@app.exception_handler(Exception)
+async def unhandled_error_handler(request: Request, exc: Exception):
+    return JSONResponse(
+        status_code=500,
+        content={
+            "error": "internal_error",
+            "message": "Something went wrong on our end",
+        },
+    )
